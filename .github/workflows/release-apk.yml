@@ -1,0 +1,118 @@
+name: Build and release OpenVoiceIME APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openvoiceime-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'FZR-forks/OpenVoiceIME' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APK: app/build/outputs/apk/release/OpenVoiceIME-release.apk
+      DOWNLOAD: docs/downloads/OpenVoiceIME-release.apk
+      SIGNER_SHA256: 8b60f1a50fd383ff8848d0ccdb9c511ef0fa0a640423f19cc8fb74d9e2b48113
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -nE 's/^ +versionName = "([0-9]+\.[0-9]+\.[0-9]+-fork)"$/\1/p' app/build.gradle.kts)
+          code=$(sed -nE 's/^ +versionCode = ([0-9]+)$/\1/p' app/build.gradle.kts)
+          test -n "$version" && test -n "$code"
+          tag="v$version"
+          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [[ "$state" == false ]]; then
+            echo "$tag is already published."
+            echo 'pending=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'pending=true' >> "$GITHUB_OUTPUT"
+          printf 'VERSION=%s\nVERSION_CODE=%s\nTAG=%s\n' "$version" "$code" "$tag" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        if: steps.version.outputs.pending == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        if: steps.version.outputs.pending == 'true'
+        with:
+          packages: platforms;android-35 build-tools;35.0.0
+
+      - name: Test, build and verify the signed APK
+        if: steps.version.outputs.pending == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.OPENIME_RELEASE_KEYSTORE_BASE64 }}
+          ORG_GRADLE_PROJECT_OPENIME_RELEASE_STORE_PASSWORD: ${{ secrets.OPENIME_RELEASE_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_OPENIME_RELEASE_KEY_ALIAS: ${{ secrets.OPENIME_RELEASE_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_OPENIME_RELEASE_KEY_PASSWORD: ${{ secrets.OPENIME_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            # Resume publication using the exact APK recorded by the tagged commit.
+            git merge-base --is-ancestor "$GITHUB_SHA" "$TAG"
+            mkdir -p "$(dirname "$APK")"
+            git show "$TAG:$DOWNLOAD" > "$APK"
+          else
+            umask 077
+            keystore=$(mktemp --suffix=.p12)
+            trap 'rm -f "$keystore"' EXIT
+            printf '%s' "${KEYSTORE_BASE64:?Missing release keystore}" | base64 --decode > "$keystore"
+            unset KEYSTORE_BASE64
+            export ORG_GRADLE_PROJECT_OPENIME_RELEASE_STORE_FILE="$keystore"
+            ./gradlew testDebugUnitTest assembleRelease
+          fi
+          build_tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$build_tools/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/signature.txt"
+          grep -Fx "Signer #1 certificate SHA-256 digest: $SIGNER_SHA256" "$RUNNER_TEMP/signature.txt"
+          package=$("$build_tools/aapt" dump badging "$APK" | sed -n '/^package:/p')
+          [[ "$package" == "package: name='dev.rankis.openime.preview' versionCode='$VERSION_CODE' versionName='$VERSION'"* ]]
+
+      - name: Publish GitHub Release and documentation download
+        if: steps.version.outputs.pending == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          previous=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          notes="$RUNNER_TEMP/release-notes.md"
+          if [[ -n "$previous" ]]; then
+            previous_code=$(git show "$previous:app/build.gradle.kts" | sed -nE 's/^ +versionCode = ([0-9]+)$/\1/p')
+            (( VERSION_CODE > previous_code ))
+            git log --format='- %s' "$previous..$GITHUB_SHA" > "$notes"
+          else
+            git log -2 --format='- %s' "$GITHUB_SHA" > "$notes"
+          fi
+          if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+            cp "$APK" "$DOWNLOAD"
+            sed -i "/<dt>Current release<\/dt>/{n;s|<dd>.*</dd>|<dd>$VERSION</dd>|;}" docs/index.html
+            git add "$DOWNLOAD" docs/index.html
+            git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -m "Update website APK for $TAG"
+            git tag "$TAG"
+            git -c 'credential.helper=!gh auth git-credential' push --atomic origin HEAD:refs/heads/main "refs/tags/$TAG"
+          fi
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || true)" == true ]]; then
+            gh release upload "$TAG" "$APK" --clobber
+            gh release edit "$TAG" --draft=false --latest
+          else
+            gh release create "$TAG" "$APK" --verify-tag --title "OpenVoiceIME $VERSION" --notes-file "$notes" --latest
+          fi

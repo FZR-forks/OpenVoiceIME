@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenVoiceIME</string>
-    <string name="ime_name">OpenVoiceIME</string>
+    <string name="app_name">OpenVoiceIME Preview</string>
+    <string name="ime_name">OpenVoiceIME Preview</string>
     <string name="ime_voice_subtype">Entrada de voz</string>
     <string name="version_placeholder">Versión</string>
     <string name="version_format">Versión %1$s</string>
@@ -142,7 +142,7 @@
     <string name="button_open_settings">Abrir ajustes</string>
     <string name="status_paused">En pausa</string>
     <string name="error_recording_pause">No se pudo pausar o reanudar. Reintenta enviar el audio guardado o cancela para empezar de nuevo.</string>
-    <string name="shortcut_service_name">Atajo de teclado de OpenVoiceIME</string>
+    <string name="shortcut_service_name">Atajo de teclado de OpenVoiceIME Preview</string>
     <string name="shortcut_service_description">Ctrl+Mayús+Espacio abre el dictado. Ctrl+Mayús+Intro transcribe, inserta y oculta el panel sin cambiar de teclado. Filtra estos atajos; no lee la pantalla ni guarda lo escrito. Activa primero OpenVoiceIME como teclado. Requiere Android 11 o posterior.</string>
     <string name="shortcut_title">Atajo de teclado físico</string>
     <string name="shortcut_instructions">Activa Atajo de teclado de OpenVoiceIME en Accesibilidad de Android. Mantén oculto el teclado virtual y selecciona un campo de texto. Ctrl+Mayús+Espacio abre la grabación; Ctrl+Mayús+Intro transcribe, inserta y oculta el panel sin cambiar de teclado ni enviar Intro a la aplicación. Si hay un error, el panel permanece abierto; repite el atajo de finalizar para reintentar. Se omite la confirmación solo para esta acción. El servicio opcional no lee la pantalla ni guarda lo escrito.</string>

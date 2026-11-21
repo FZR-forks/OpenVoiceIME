@@ -55,6 +55,8 @@ export ORG_GRADLE_PROJECT_OPENIME_RELEASE_KEY_PASSWORD="$OPENIME_RELEASE_KEY_PAS
 
 Plain `./gradlew assembleRelease` intentionally fails when these Gradle project properties are unavailable. Presence of `~/.openime/openvoiceime-release.properties` alone is insufficient; Gradle does not automatically read that path.
 
+On the FZR-forks/OpenVoiceIME fork, bump `versionCode` and `versionName` before pushing a release to `main`. The release workflow uses the fork’s GitHub Actions signing secrets, verifies the APK, and publishes it to GitHub Releases and the documentation download. The fork uses `dev.rankis.openime.preview` and the same signing key as the standalone test APK.
+
 Release APK is written to:
 
 ```text
